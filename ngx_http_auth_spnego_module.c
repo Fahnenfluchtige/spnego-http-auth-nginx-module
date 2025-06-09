@@ -813,6 +813,9 @@ ngx_http_auth_spnego_store_delegated_creds(ngx_http_request_t *r,
                           ngx_strlen("/") + ngx_strlen(escaped)) +
                          1;
     ccname = (char *)ngx_pcalloc(r->pool, ccname_size);
+    if (NULL == ccname) {
+        return NGX_ERROR;
+    }
 
     ngx_snprintf((u_char *)ccname, ccname_size, "FILE:%s/%*s", P_tmpdir,
                  ngx_strlen(escaped), escaped);
@@ -850,6 +853,10 @@ ngx_http_auth_spnego_store_delegated_creds(ngx_http_request_t *r,
     ngx_http_auth_spnego_set_variable(r, &var_name, &var_value);
 
     ngx_pool_cleanup_t *cln = ngx_pool_cleanup_add(r->pool, 0);
+    if (NULL == cln) {
+        return NGX_ERROR;
+    }
+
     cln->handler = ngx_http_auth_spnego_krb5_destroy_ccache;
     cln->data = ccname;
 done:
@@ -884,7 +891,7 @@ ngx_int_t ngx_http_auth_spnego_basic(ngx_http_request_t *r,
     krb5_creds creds;
     krb5_get_init_creds_opt *gic_options = NULL;
     char *name = NULL;
-    char *p = NULL;
+    unsigned char *p = NULL;
 
     code = krb5_init_context(&kcontext);
     if (code) {
@@ -932,7 +939,8 @@ ngx_int_t ngx_http_auth_spnego_basic(ngx_http_request_t *r,
     free(name);
     name = NULL;
 
-    p = ngx_strchr(r->headers_in.user.data, '@');
+    p = ngx_strlchr(r->headers_in.user.data,
+                    r->headers_in.user.data + r->headers_in.user.len, '@');
     user.len = r->headers_in.user.len + 1;
     if (NULL == p) {
         if (alcf->force_realm && alcf->realm.len && alcf->realm.data) {
@@ -1060,7 +1068,8 @@ ngx_int_t ngx_http_auth_spnego_basic(ngx_http_request_t *r,
 
     krb5_free_cred_contents(kcontext, &creds);
     /* Try to add the system realm to $remote_user if needed. */
-    if (alcf->fqun && !ngx_strchr(r->headers_in.user.data, '@')) {
+    if (alcf->fqun && !ngx_strlchr(r->headers_in.user.data,
+                                   r->headers_in.user.data + r->headers_in.user.len, '@')) {
 #ifdef krb5_princ_realm
         /*
          * MIT does not have krb5_principal_get_realm() but its
@@ -1375,7 +1384,7 @@ static ngx_int_t ngx_http_auth_spnego_obtain_server_credentials(
     krb5_get_init_creds_opt_set_forwardable(&gicopts, 1);
 
     size_t tgs_principal_name_size =
-        (ngx_strlen(KRB5_TGS_NAME) + (krb5_realm_length(principal->realm) * 2) + 2) + 1;
+        (ngx_strlen(KRB5_TGS_NAME) + ((size_t)krb5_realm_length(principal->realm) * 2) + 2) + 1;
     tgs_principal_name = (char *)ngx_pcalloc(r->pool, tgs_principal_name_size);
 
     ngx_snprintf((u_char *)tgs_principal_name, tgs_principal_name_size,
